@@ -37,7 +37,7 @@ class ApiService {
   // Method to get OpenVPN profile for Android
   Future<String> getOpenVpnProfile(String username, String password) async {
     try {
-      // First get the server information
+      // First get the server information to ensure user is valid
       final userResponse = await getUser(username, password);
       if (userResponse['response'] != 'success') {
         throw Exception('Failed to get server information');
@@ -48,33 +48,60 @@ class ApiService {
         throw Exception('Server IP not found in response');
       }
 
-      // Try to get the OpenVPN configuration
+      // Directly download the OpenVPN configuration using the provided API URL
       final response = await _client.get(
         Uri.parse('$baseUrl?method=get_openvpn_profile&username=$username&password=$password'),
       );
       
       if (response.statusCode == 200) {
-        final responseData = jsonDecode(response.body);
+        // Check if the response is JSON (error) or raw config file
+        String responseBody = response.body;
         
-        // If we get an error response, generate the config manually
-        if (responseData is Map && responseData['response'] == 'error') {
-          return _ensureValidOpenVpnConfig('', serverIp, username);
+        try {
+          // Try to parse as JSON to see if it's an error response
+          final Map<String, dynamic> jsonResponse = jsonDecode(responseBody);
+          
+          // If we get here, it's a JSON response (likely an error)
+          if (jsonResponse['response'] == 'error') {
+            print('Error from API: ${jsonResponse['message'] ?? 'Unknown error'}');
+            // Fall back to generating the config manually
+            return _ensureValidOpenVpnConfig('', serverIp, username);
+          }
+        } catch (e) {
+          // Not JSON, likely a raw config file which is what we want
+          // Just continue with the response body
         }
         
-        // If we got a valid config string, ensure it's complete
-        String config = response.body;
-        return _ensureValidOpenVpnConfig(config, serverIp, username);
+        // If the response starts with 'client', it's likely a valid OpenVPN config
+        if (responseBody.trim().startsWith('client')) {
+          return responseBody;
+        } else {
+          // If not a valid config, generate one manually
+          return _ensureValidOpenVpnConfig(responseBody, serverIp, username);
+        }
       } else {
         throw Exception('Failed to get OpenVPN profile: ${response.statusCode}');
       }
     } catch (e) {
+      print('Error getting OpenVPN profile: $e');
       throw Exception('Network error while getting OpenVPN profile: $e');
     }
   }
   
   String _ensureValidOpenVpnConfig(String config, String serverIp, String username) {
-  // A simplified configuration that removes extra TLS directives which might imply client certificate usage.
-  config = '''client
+    print('Generating OpenVPN config for server: $serverIp');
+    
+    // Check if the provided config is already valid
+    if (config.contains('client') && config.contains('dev tun') && config.contains('<ca>')) {
+      print('Using provided OpenVPN config which appears valid');
+      return config;
+    }
+    
+    // Generate a standard OpenVPN config that should work with most servers
+    print('Generating standard OpenVPN config');
+    
+    // A simplified configuration that works with most OpenVPN servers
+    String standardConfig = '''client
 dev tun
 proto udp
 remote $serverIp 1194
@@ -87,6 +114,7 @@ auth SHA256
 auth-nocache
 cipher AES-128-GCM
 verb 3
+auth-user-pass
 
 <ca>
 -----BEGIN CERTIFICATE-----
@@ -111,10 +139,15 @@ HjAcBgkqhkiG9w0BCQEWD2luZm9AYWNjZXNzdnBuLj==
 -----END CERTIFICATE-----
 </ca>
 ''';
-  // Append an extra newline for safety.
-  config += '\n';
-  return config;
-}
+    
+    // Ensure the config ends with a newline
+    if (!standardConfig.endsWith('\n')) {
+      standardConfig += '\n';
+    }
+    
+    print('Generated OpenVPN config with length: ${standardConfig.length}');
+    return standardConfig;
+  }
 
 
   

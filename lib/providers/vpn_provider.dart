@@ -108,24 +108,41 @@ class VpnProvider with ChangeNotifier {
       if (defaultTargetPlatform == TargetPlatform.android) {
         String config;
         try {
+          print('Fetching OpenVPN profile for ${_user!.username}');
           config = await _apiService.getOpenVpnProfile(
             _user!.username,
             _user!.password,
           );
+          
+          // Log the first few characters of the config for debugging
+          print('Received OpenVPN config with length: ${config.length}');
+          if (config.length > 0) {
+            print('Config starts with: ${config.substring(0, config.length > 50 ? 50 : config.length)}...');
+          } else {
+            print('Warning: Received empty OpenVPN config');
+            _isConnecting = false;
+            _errorMessage = 'Received empty VPN configuration';
+            notifyListeners();
+            return;
+          }
         } catch (e) {
+          print('Error fetching OpenVPN profile: $e');
           _isConnecting = false;
-          _errorMessage = e.toString();
+          _errorMessage = 'Failed to get VPN profile: ${e.toString()}';
           notifyListeners();
           return;
         }
         
         try {
+          print('Connecting to VPN using OpenVPN profile');
           await _vpnService.connect(
             config: config,
             username: _user!.username,
             password: _user!.password,
           );
+          print('VPN connection initiated successfully');
         } catch (e) {
+          print('VPN connection error: $e');
           _isConnecting = false;
           _errorMessage = 'VPN connection failed: ${e.toString()}';
           notifyListeners();

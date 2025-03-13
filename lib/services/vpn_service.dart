@@ -84,6 +84,16 @@ class VpnService {
       // Ensure config is properly formatted with Unix-style line endings
       config = config.replaceAll('\r\n', '\n');
       
+      // Validate OpenVPN config
+      if (!config.contains('client') || !config.contains('dev tun')) {
+        print('Warning: OpenVPN config appears to be invalid or incomplete');
+      }
+      
+      // Add additional debug logging
+      print('Initializing OpenVPN connection...');
+      print('Username: $username');
+      
+      // Connect to VPN
       await _openVPN.connect(
         config,
         username,
@@ -91,6 +101,8 @@ class VpnService {
         certIsRequired: false,
         bypassPackages: [],
       );
+      
+      print('OpenVPN connection request sent successfully');
     } catch (e) {
       print('VPN connection error: $e');
       throw Exception('Failed to connect to VPN: $e');
